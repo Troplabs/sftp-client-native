@@ -1,0 +1,16 @@
+{
+  "lineWidth": 120,
+  "typescript": {},
+  "json": { "preferSingleLine": true },
+  "markdown": {},
+  "toml": {},
+  "yaml": {},
+  "excludes": ["**/node_modules", "**/*-lock.yaml", "index.mjs", "index.d.ts"],
+  "plugins": [
+    "npm:@dprint/typescript@0.96.1",
+    "npm:@dprint/json@0.24.0",
+    "npm:@dprint/markdown@0.24.0",
+    "npm:@dprint/toml@0.8.0",
+    "npm:dprint-plugin-yaml@0.6.0"
+  ]
+}

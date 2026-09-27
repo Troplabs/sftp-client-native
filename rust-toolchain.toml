@@ -1,0 +1,4 @@
+[toolchain]
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
+channel = "1.98"
+profile = "minimal"
