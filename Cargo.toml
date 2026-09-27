@@ -1,0 +1,27 @@
+[package]
+name = "sftp-client-native"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/troplabs/sftp-client-native"
+rust-version = "1.98"
+description = "Node.js native SFTP client backed by russh"
+
+[lib]
+name = "sftp_client_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "3", features = ["async"] }
+napi-derive = "3"
+russh = "0.63"
+russh-sftp = "3"
+tokio = { version = "1", features = ["io-util", "sync"] }
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"
