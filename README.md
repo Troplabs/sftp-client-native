@@ -2,7 +2,7 @@
 
 An asynchronous Node.js SFTP client backed by the Rust crates [russh](https://github.com/Eugeny/russh) and [russh-sftp](https://github.com/AspectUnk/russh-sftp), exposed through [NAPI-RS](https://napi.rs/).
 
-The client follows the SSH and SFTP flow in russh's [sftp_client.rs example](https://github.com/Eugeny/russh/blob/main/russh/examples/sftp_client.rs). It verifies server keys with the standard OpenSSH known_hosts file. Unknown or changed keys are rejected.
+Use it when you need a small, promise-based SFTP API in Node.js without depending on OpenSSH CLI wrappers or pure-JS SSH stacks. The client verifies server host keys against the standard OpenSSH `~/.ssh/known_hosts` file and fails closed for unknown or changed keys.
 
 > The package is under initial development. The JavaScript API and native package support may change before the first npm release.
 
@@ -11,7 +11,7 @@ The client follows the SSH and SFTP flow in russh's [sftp_client.rs example](htt
 - Node.js 24.21 or newer.
 - Rust 1.98 or newer and pnpm 12 to build from source.
 - A reachable SSH server with the SFTP subsystem enabled.
-- The server's public host key recorded in ~/.ssh/known_hosts.
+- The server's public host key recorded in `~/.ssh/known_hosts`.
 
 ## Install
 
@@ -21,7 +21,16 @@ After the first public npm release:
 pnpm add @troplabs/sftp-client-native
 ```
 
-## Usage
+Until then, clone the repository and build locally:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm run build
+```
+
+Import the package from your application (or link the workspace package) after the build produces `index.mjs`, `index.d.ts`, and the platform `.node` binary.
+
+## Quick start
 
 ```js
 import { SftpClient } from "@troplabs/sftp-client-native";
@@ -53,29 +62,181 @@ main().catch((error) => {
 });
 ```
 
-The API is asynchronous. SFTP errors and connection failures reject the returned promises.
+Always call `close()` when finished. Prefer `try` / `finally` so the SSH session is torn down even when an operation rejects.
 
-### API
+## Host key verification
 
-- **SftpClient.connect(options)** — connect and authenticate with a username and password.
-- **client.readDir(remotePath)** — return the names in a remote directory.
-- **client.readFile(remotePath)** — return a remote file as a Node.js Buffer.
-- **client.writeFile(remotePath, content)** — create or replace a remote file from a Buffer.
-- **client.createDir(remotePath)** — create a remote directory.
-- **client.removeFile(remotePath)** and **client.removeDir(remotePath)** — remove a remote file or directory.
-- **client.rename(oldRemotePath, newRemotePath)** — rename a remote path.
-- **client.close()** — close the SFTP and SSH sessions.
+Before `connect` returns a client, the TCP connection completes an SSH handshake and the client checks the server key against `~/.ssh/known_hosts` for the host and port.
 
-Connection options:
+- Unknown, changed, or unreadable keys are rejected.
+- There is no trust-on-first-use (TOFU) behavior and no automatic writing of new host keys.
+- Add the server key through a trusted channel first (for example `ssh-keyscan` reviewed by an operator, or your infra provisioning flow).
 
-- **host** — SSH server host name or IP address.
-- **port** — SSH port; defaults to 22.
-- **username** — SSH account name.
-- **password** — password for SSH password authentication.
+This is intentionally stricter than russh's upstream SFTP example, which accepts any server key.
 
-The client checks ~/.ssh/known_hosts for the host and port. Add the server key through a trusted channel before connecting. It does not use trust-on-first-use behavior. This is intentionally stricter than the upstream example, which accepts any key.
+## Authentication
 
-readFile buffers the full remote file in memory. Streaming transfers, key-based authentication, custom known-hosts paths, and richer metadata are not part of the initial API.
+`SftpClient.connect(options)` requires **exactly one** auth mode:
+
+| Mode                | Options                                                            |
+| ------------------- | ------------------------------------------------------------------ |
+| Password            | `password`                                                         |
+| Public key          | `privateKey` **or** `privateKeyPath` (optional `passphrase`)       |
+| OpenSSH certificate | public-key options **plus** `certificate` **or** `certificatePath` |
+| SSH agent           | `agent: true` and/or `agentSocket`                                 |
+
+Do not combine modes (for example password + private key). `privateKey` and `privateKeyPath` are mutually exclusive; so are `certificate` and `certificatePath`.
+
+Store secrets in environment variables or a secret manager. Never commit real passwords, private keys, or certificates.
+
+### Password
+
+```js
+const client = await SftpClient.connect({
+  host: "sftp.example.com",
+  username: process.env.SFTP_USERNAME,
+  password: process.env.SFTP_PASSWORD,
+});
+```
+
+### Private key
+
+Pass either a local filesystem path or the key material as a string (OpenSSH or PEM). Paths are local machine paths, not remote SFTP paths.
+
+```js
+const client = await SftpClient.connect({
+  host: "sftp.example.com",
+  username: process.env.SFTP_USERNAME,
+  privateKeyPath: process.env.SFTP_PRIVATE_KEY_PATH,
+  // passphrase: process.env.SFTP_KEY_PASSPHRASE, // encrypted keys only
+});
+```
+
+```js
+const client = await SftpClient.connect({
+  host: "sftp.example.com",
+  username: process.env.SFTP_USERNAME,
+  privateKey: process.env.SFTP_PRIVATE_KEY,
+});
+```
+
+### OpenSSH certificate
+
+Certificate authentication uses a user certificate together with the matching private key (the same pairing OpenSSH uses with `IdentityFile` + `CertificateFile`).
+
+```js
+const client = await SftpClient.connect({
+  host: "sftp.example.com",
+  username: process.env.SFTP_USERNAME,
+  privateKeyPath: process.env.SFTP_PRIVATE_KEY_PATH,
+  certificatePath: process.env.SFTP_CERTIFICATE_PATH,
+});
+```
+
+```js
+const client = await SftpClient.connect({
+  host: "sftp.example.com",
+  username: process.env.SFTP_USERNAME,
+  privateKey: process.env.SFTP_PRIVATE_KEY,
+  certificate: process.env.SFTP_CERTIFICATE,
+  // passphrase: process.env.SFTP_KEY_PASSPHRASE,
+});
+```
+
+`certificate` / `certificatePath` without a private key is rejected. For certificates loaded in an SSH agent, use agent auth instead.
+
+### SSH agent
+
+```js
+const client = await SftpClient.connect({
+  host: "sftp.example.com",
+  username: process.env.SFTP_USERNAME,
+  agent: true,
+});
+```
+
+- On Unix, `agent: true` uses `SSH_AUTH_SOCK`.
+- On Windows, `agent: true` uses Pageant when available.
+- Set `agentSocket` to a Unix domain socket path or Windows named-pipe path to target a specific agent. Providing `agentSocket` alone implies agent auth.
+
+The client requests agent identities and tries each public key and OpenSSH certificate until one succeeds.
+
+```js
+const client = await SftpClient.connect({
+  host: "sftp.example.com",
+  username: process.env.SFTP_USERNAME,
+  agentSocket: process.env.SSH_AUTH_SOCK,
+});
+```
+
+## File operations
+
+Remote paths are SFTP paths on the server. They are not interpreted as local filesystem paths.
+
+| Method                                 | Behavior                                           |
+| -------------------------------------- | -------------------------------------------------- |
+| `readDir(remotePath)`                  | Returns entry names in a remote directory          |
+| `readFile(remotePath)`                 | Returns the full remote file as a Node.js `Buffer` |
+| `writeFile(remotePath, content)`       | Creates or replaces a remote file from a `Buffer`  |
+| `createDir(remotePath)`                | Creates a remote directory                         |
+| `removeFile(remotePath)`               | Removes a remote file                              |
+| `removeDir(remotePath)`                | Removes a remote directory                         |
+| `rename(oldRemotePath, newRemotePath)` | Renames a remote path                              |
+| `close()`                              | Closes the SFTP subsystem and disconnects SSH      |
+
+`readFile` buffers the entire remote file in memory. For large files, plan memory accordingly; streaming transfers are not part of the current API.
+
+Operations on a closed client reject with an error indicating the client is closed. Calling `close()` more than once is safe.
+
+## Errors
+
+Connection, authentication, and SFTP failures reject the returned promises. Catch at the call site or with `.catch` on your top-level async entry point.
+
+Typical failure cases:
+
+- Host key missing or mismatched in `known_hosts`
+- Auth rejected (wrong password, key, certificate, or agent identity)
+- Network / DNS failures
+- Remote path not found or permission denied
+
+The library does not log credentials, private keys, or certificate material.
+
+## API reference
+
+### `SftpClient.connect(options): Promise<SftpClient>`
+
+Connects, verifies the host key, authenticates, and opens the SFTP subsystem.
+
+#### Connection fields
+
+- **host** `string` — SSH server host name or IP address.
+- **port** `number` (optional) — SSH port; defaults to `22`.
+- **username** `string` — SSH account name.
+
+#### Auth fields
+
+- **password** `string` (optional) — password authentication.
+- **privateKey** `string` (optional) — OpenSSH/PEM private key material.
+- **privateKeyPath** `string` (optional) — local path to an OpenSSH/PEM private key.
+- **passphrase** `string` (optional) — passphrase for an encrypted private key; only valid with `privateKey` or `privateKeyPath`.
+- **certificate** `string` (optional) — OpenSSH user certificate material; requires a private key.
+- **certificatePath** `string` (optional) — local path to an OpenSSH user certificate; requires a private key.
+- **agent** `boolean` (optional) — when `true`, authenticate via the default SSH agent.
+- **agentSocket** `string` (optional) — agent socket / named-pipe path; implies agent auth.
+
+### Instance methods
+
+See [File operations](#file-operations) above.
+
+## Limitations
+
+Not part of the current API:
+
+- Streaming uploads/downloads
+- Custom known-hosts file paths
+- Keyboard-interactive or GSSAPI authentication
+- Auth fallback chains (for example try key, then password)
+- Rich remote file metadata (mode, mtime, size beyond what you derive yourself)
 
 ## Development
 
@@ -86,7 +247,27 @@ cargo fmt --all -- --check
 cargo check
 ```
 
-pnpm run build generates the ESM loader, TypeScript declarations, and the native binary for the current platform. Generated build outputs are not committed.
+`pnpm run build` generates the ESM loader, TypeScript declarations, and the native binary for the current platform. Generated build outputs are not committed.
+
+### Smoke test against public SFTP servers
+
+[sftp.net](https://www.sftp.net/public-online-sftp-servers) lists free demo servers useful for a quick password-auth check:
+
+| Host                  | Port | Login                           |
+| --------------------- | ---- | ------------------------------- |
+| `test.rebex.net`      | 22   | `demo` / `password` (read-only) |
+| `demo.wftpserver.com` | 2222 | `demo` / `demo`                 |
+
+Trust each host key first (review `ssh-keyscan` output before appending):
+
+```sh
+ssh-keyscan -p 22 test.rebex.net >> ~/.ssh/known_hosts
+ssh-keyscan -p 2222 demo.wftpserver.com >> ~/.ssh/known_hosts
+pnpm run build
+pnpm run smoke:public-sftp
+```
+
+This only exercises password auth, `readDir` / `readFile`, and (on the writable demo) a small write round-trip. It does not cover private-key, certificate, or agent auth.
 
 ## Continuous integration
 

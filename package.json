@@ -18,7 +18,8 @@
     "build:debug": "napi build --platform --esm --js index.mjs",
     "check": "cargo check",
     "fmt:check": "cargo fmt --all -- --check",
-    "prepack": "pnpm run build"
+    "prepack": "pnpm run build",
+    "smoke:public-sftp": "node scripts/smoke-public-sftp.mjs"
   },
   "devDependencies": { "@napi-rs/cli": "^3.10.5", "dprint": "^0.57.4" },
   "packageManager": "pnpm@12.7.0",
