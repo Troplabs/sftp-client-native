@@ -23,6 +23,8 @@ pnpm add @troplabs/sftp-client-native
 
 ## Usage
 
+Password authentication:
+
 ```js
 import { SftpClient } from "@troplabs/sftp-client-native";
 
@@ -53,11 +55,36 @@ main().catch((error) => {
 });
 ```
 
-The API is asynchronous. SFTP errors and connection failures reject the returned promises.
+Private key authentication (local key path or key material):
+
+```js
+const client = await SftpClient.connect({
+  host: "sftp.example.com",
+  username: process.env.SFTP_USERNAME,
+  privateKeyPath: process.env.SFTP_PRIVATE_KEY_PATH,
+  // passphrase: process.env.SFTP_KEY_PASSPHRASE, // for encrypted keys
+});
+
+// Or pass OpenSSH/PEM key contents directly:
+// privateKey: process.env.SFTP_PRIVATE_KEY,
+```
+
+SSH agent authentication:
+
+```js
+const client = await SftpClient.connect({
+  host: "sftp.example.com",
+  username: process.env.SFTP_USERNAME,
+  agent: true, // uses SSH_AUTH_SOCK on Unix, Pageant on Windows
+  // agentSocket: process.env.SSH_AUTH_SOCK, // optional custom socket / named pipe
+});
+```
+
+Provide exactly one auth mode per connect call. The API is asynchronous. SFTP errors and connection failures reject the returned promises.
 
 ### API
 
-- **SftpClient.connect(options)** — connect and authenticate with a username and password.
+- **SftpClient.connect(options)** — connect and authenticate with password, a private key, or an SSH agent.
 - **client.readDir(remotePath)** — return the names in a remote directory.
 - **client.readFile(remotePath)** — return a remote file as a Node.js Buffer.
 - **client.writeFile(remotePath, content)** — create or replace a remote file from a Buffer.
@@ -72,10 +99,17 @@ Connection options:
 - **port** — SSH port; defaults to 22.
 - **username** — SSH account name.
 - **password** — password for SSH password authentication.
+- **privateKey** — OpenSSH/PEM private key material for public key authentication.
+- **privateKeyPath** — local filesystem path to an OpenSSH/PEM private key (not a remote SFTP path).
+- **passphrase** — passphrase for an encrypted private key; only valid with `privateKey` or `privateKeyPath`.
+- **agent** — when `true`, authenticate via the default SSH agent (`SSH_AUTH_SOCK` on Unix, Pageant on Windows).
+- **agentSocket** — Unix domain socket or Windows named-pipe path for a specific agent; implies agent auth.
+
+Exactly one auth mode is required: `password`, `privateKey`/`privateKeyPath`, or `agent`/`agentSocket`. `privateKey` and `privateKeyPath` are mutually exclusive.
 
 The client checks ~/.ssh/known_hosts for the host and port. Add the server key through a trusted channel before connecting. It does not use trust-on-first-use behavior. This is intentionally stricter than the upstream example, which accepts any key.
 
-readFile buffers the full remote file in memory. Streaming transfers, key-based authentication, custom known-hosts paths, and richer metadata are not part of the initial API.
+readFile buffers the full remote file in memory. Streaming transfers, custom known-hosts paths, and richer metadata are not part of the initial API.
 
 ## Development
 

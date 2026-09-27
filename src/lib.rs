@@ -5,7 +5,9 @@ use napi::bindgen_prelude::Buffer;
 use napi::{Error as NapiError, Result};
 use napi_derive::napi;
 use russh::client::{self, Handler};
-use russh::keys::{self, PublicKeyOrCertificate};
+use russh::keys::agent::AgentIdentity;
+use russh::keys::agent::client::AgentClient;
+use russh::keys::{self, PrivateKeyWithHashAlg, PublicKeyOrCertificate, decode_secret_key};
 use russh_sftp::client::SftpSession;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -34,8 +36,181 @@ impl Handler for KnownHostsHandler {
 pub struct ConnectOptions {
     pub host: String,
     pub username: String,
-    pub password: String,
     pub port: Option<u16>,
+    pub password: Option<String>,
+    pub private_key: Option<String>,
+    pub private_key_path: Option<String>,
+    pub passphrase: Option<String>,
+    pub agent: Option<bool>,
+    pub agent_socket: Option<String>,
+}
+
+enum AuthMode {
+    Password(String),
+    PrivateKey {
+        key_material: Option<String>,
+        key_path: Option<String>,
+        passphrase: Option<String>,
+    },
+    Agent {
+        socket: Option<String>,
+    },
+}
+
+fn resolve_auth_mode(options: &ConnectOptions) -> Result<AuthMode> {
+    let password_mode = options.password.is_some();
+    let key_mode = options.private_key.is_some() || options.private_key_path.is_some();
+    let agent_mode = options.agent == Some(true) || options.agent_socket.is_some();
+
+    if options.private_key.is_some() && options.private_key_path.is_some() {
+        return Err(NapiError::from_reason(
+            "privateKey and privateKeyPath are mutually exclusive",
+        ));
+    }
+
+    if options.passphrase.is_some() && !key_mode {
+        return Err(NapiError::from_reason(
+            "passphrase is only valid with privateKey or privateKeyPath",
+        ));
+    }
+
+    let mode_count = usize::from(password_mode) + usize::from(key_mode) + usize::from(agent_mode);
+    if mode_count != 1 {
+        return Err(NapiError::from_reason(
+            "ConnectOptions requires exactly one auth mode: password, privateKey/privateKeyPath, or agent/agentSocket",
+        ));
+    }
+
+    if password_mode {
+        return Ok(AuthMode::Password(
+            options.password.clone().expect("password_mode checked"),
+        ));
+    }
+
+    if key_mode {
+        return Ok(AuthMode::PrivateKey {
+            key_material: options.private_key.clone(),
+            key_path: options.private_key_path.clone(),
+            passphrase: options.passphrase.clone(),
+        });
+    }
+
+    Ok(AuthMode::Agent {
+        socket: options.agent_socket.clone(),
+    })
+}
+
+async fn authenticate_session(
+    ssh: &mut client::Handle<KnownHostsHandler>,
+    username: &str,
+    mode: AuthMode,
+) -> Result<()> {
+    match mode {
+        AuthMode::Password(password) => {
+            let auth = ssh.authenticate_password(username, password).await.map_err(to_napi_error)?;
+            if !auth.success() {
+                return Err(NapiError::from_reason("SSH password authentication was rejected"));
+            }
+            Ok(())
+        }
+        AuthMode::PrivateKey {
+            key_material,
+            key_path,
+            passphrase,
+        } => {
+            let passphrase = passphrase.as_deref();
+            let key = if let Some(path) = key_path {
+                keys::load_secret_key(path, passphrase).map_err(to_napi_error)?
+            } else if let Some(material) = key_material {
+                decode_secret_key(&material, passphrase).map_err(to_napi_error)?
+            } else {
+                return Err(NapiError::from_reason(
+                    "privateKey or privateKeyPath is required for public key authentication",
+                ));
+            };
+
+            let hash_alg = ssh.best_supported_rsa_hash().await.map_err(to_napi_error)?.flatten();
+            let auth = ssh
+                .authenticate_publickey(username, PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg))
+                .await
+                .map_err(to_napi_error)?;
+            if !auth.success() {
+                return Err(NapiError::from_reason("SSH public key authentication was rejected"));
+            }
+            Ok(())
+        }
+        AuthMode::Agent { socket } => authenticate_with_agent(ssh, username, socket.as_deref()).await,
+    }
+}
+
+async fn authenticate_with_agent(
+    ssh: &mut client::Handle<KnownHostsHandler>,
+    username: &str,
+    socket: Option<&str>,
+) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let mut agent = match socket {
+            Some(path) => AgentClient::connect_uds(path).await.map_err(to_napi_error)?,
+            None => AgentClient::connect_env().await.map_err(to_napi_error)?,
+        };
+        try_agent_identities(ssh, username, &mut agent).await
+    }
+
+    #[cfg(windows)]
+    {
+        match socket {
+            Some(path) => {
+                let mut agent = AgentClient::connect_named_pipe(path).await.map_err(to_napi_error)?;
+                try_agent_identities(ssh, username, &mut agent).await
+            }
+            None => {
+                let mut agent = AgentClient::connect_pageant().await.map_err(to_napi_error)?;
+                try_agent_identities(ssh, username, &mut agent).await
+            }
+        }
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (ssh, username, socket);
+        Err(NapiError::from_reason(
+            "SSH agent authentication is not supported on this platform",
+        ))
+    }
+}
+
+async fn try_agent_identities<S>(
+    ssh: &mut client::Handle<KnownHostsHandler>,
+    username: &str,
+    agent: &mut AgentClient<S>,
+) -> Result<()>
+where
+    S: russh::keys::agent::client::AgentStream + Unpin + Send,
+{
+    let identities = agent.request_identities().await.map_err(to_napi_error)?;
+    let hash_alg = ssh.best_supported_rsa_hash().await.map_err(to_napi_error)?.flatten();
+
+    let mut saw_public_key = false;
+    for identity in identities {
+        let AgentIdentity::PublicKey { key, .. } = identity else {
+            continue;
+        };
+        saw_public_key = true;
+
+        let auth = ssh.authenticate_publickey_with(username, key, hash_alg, agent).await.map_err(to_napi_error)?;
+        if auth.success() {
+            return Ok(());
+        }
+    }
+
+    if !saw_public_key {
+        return Err(NapiError::from_reason(
+            "SSH agent has no public key identities available",
+        ));
+    }
+
+    Err(NapiError::from_reason("SSH agent authentication was rejected"))
 }
 
 #[napi(js_name = "SftpClient")]
@@ -59,6 +234,7 @@ impl JsSftpClient {
 impl JsSftpClient {
     #[napi(factory)]
     pub async fn connect(options: ConnectOptions) -> Result<Self> {
+        let auth_mode = resolve_auth_mode(&options)?;
         let port = options.port.unwrap_or(22);
         let config = Arc::new(client::Config::default());
         let handler = KnownHostsHandler {
@@ -68,10 +244,7 @@ impl JsSftpClient {
 
         let mut ssh = client::connect(config, (options.host.as_str(), port), handler).await.map_err(to_napi_error)?;
 
-        let auth = ssh.authenticate_password(&options.username, &options.password).await.map_err(to_napi_error)?;
-        if !auth.success() {
-            return Err(NapiError::from_reason("SSH password authentication was rejected"));
-        }
+        authenticate_session(&mut ssh, &options.username, auth_mode).await?;
 
         let channel = ssh.channel_open_session().await.map_err(to_napi_error)?;
         channel.request_subsystem(true, "sftp").await.map_err(to_napi_error)?;
