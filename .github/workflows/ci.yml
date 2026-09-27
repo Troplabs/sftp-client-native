@@ -12,10 +12,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  SCCACHE_GHA_ENABLED: "true"
-  RUSTC_WRAPPER: "sccache"
-
 jobs:
   build:
     name: Build
@@ -31,9 +27,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-
-      - name: run sccache
-        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
