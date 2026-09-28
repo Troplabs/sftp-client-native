@@ -4,7 +4,7 @@ An asynchronous Node.js SFTP client backed by the Rust crates [russh](https://gi
 
 Use it when you need a small, promise-based SFTP API in Node.js without depending on OpenSSH CLI wrappers or pure-JS SSH stacks. The client verifies server host keys against the standard OpenSSH `~/.ssh/known_hosts` file and fails closed for unknown or changed keys.
 
-> The package is under initial development. The JavaScript API and native package support may change before the first npm release.
+> The package is under initial development. The JavaScript API may change before 1.0.
 
 ## Requirements
 
@@ -15,20 +15,26 @@ Use it when you need a small, promise-based SFTP API in Node.js without dependin
 
 ## Install
 
-After the first public npm release:
-
 ```sh
 pnpm add @troplabs/sftp-client-native
 ```
 
-Until then, clone the repository and build locally:
+Prebuilt native binaries are published for:
+
+| OS      | Architectures            |
+| ------- | ------------------------ |
+| macOS   | amd64, arm64 (macOS 26+) |
+| Linux   | amd64, arm64 (glibc)     |
+| Windows | amd64, arm64             |
+
+Install pulls the matching optional platform package automatically. Building from source still works for local development:
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm run build
 ```
 
-Import the package from your application (or link the workspace package) after the build produces `index.mjs`, `index.d.ts`, and the platform `.node` binary.
+Import the package from your application after install, or after a local build produces `index.mjs`, `index.d.ts`, and the platform `.node` binary.
 
 ## Quick start
 
@@ -269,11 +275,11 @@ pnpm run smoke:public-sftp
 
 This only exercises password auth, `readDir` / `readFile`, and (on the writable demo) a small write round-trip. It does not cover private-key, certificate, or agent auth.
 
-## Continuous integration
+## Continuous integration and releases
 
-GitHub Actions checks formatting and builds the native addon on Linux, macOS, and Windows for pushes and pull requests. Workflows have read-only repository permissions. There is no automated npm publishing or release workflow.
+GitHub Actions CI runs on pull requests and pushes to `main`. It checks formatting and builds every supported platform target (macOS 26+, Linux glibc, and Windows × amd64/arm64) with read-only repository permissions.
 
-The package's prepack script builds for the current machine. Before the first public release, maintainers should confirm the npm artifact strategy and supported platform targets; a single-machine package archive contains only that machine's native binary.
+Pushing a `v*` tag runs the Release workflow, which rebuilds those targets and publishes via [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/) (OIDC). That publishes one optional package per platform, then the root `@troplabs/sftp-client-native` package, with automatic provenance and no long-lived npm token. See [CONTRIBUTING.md](CONTRIBUTING.md) for Trusted Publisher setup.
 
 ## License
 

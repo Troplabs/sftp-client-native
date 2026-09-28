@@ -1,0 +1,212 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+# Default deny; publish job elevates only what OIDC + GitHub Releases need.
+permissions:
+  contents: read
+
+env:
+  MACOSX_DEPLOYMENT_TARGET: "26.0"
+
+jobs:
+  build:
+    name: Build - ${{ matrix.settings.target }}
+    runs-on: ${{ matrix.settings.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-26
+            target: aarch64-apple-darwin
+            build: pnpm build --target aarch64-apple-darwin
+          - host: macos-26
+            target: x86_64-apple-darwin
+            build: pnpm build --target x86_64-apple-darwin
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            build: pnpm build --target x86_64-unknown-linux-gnu --use-napi-cross
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            build: pnpm build --target aarch64-unknown-linux-gnu --use-napi-cross
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+            build: pnpm build --target x86_64-pc-windows-msvc
+          - host: windows-latest
+            target: aarch64-pc-windows-msvc
+            build: pnpm build --target aarch64-pc-windows-msvc
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.21.0
+          cache: pnpm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.98"
+          targets: ${{ matrix.settings.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.settings.target }}
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build native addon
+        run: ${{ matrix.settings.build }}
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: |
+            *.node
+            index.mjs
+            index.d.ts
+          if-no-files-found: error
+
+  publish:
+    name: Publish to npm
+    needs: build
+    runs-on: ubuntu-latest
+    # Optional GitHub Environment: add required reviewers / wait timer in repo settings.
+    environment: npm
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.21.0
+          registry-url: https://registry.npmjs.org
+          # npm trusted-publishing guidance: never cache the package manager in release builds.
+          package-manager-cache: false
+
+      - name: Ensure npm supports trusted publishing
+        run: |
+          set -euo pipefail
+          npm install -g npm@latest
+          npm --version
+          node -e "
+            const [major, minor] = require('child_process')
+              .execSync('npm --version', { encoding: 'utf8' })
+              .trim()
+              .split('.')
+              .map(Number);
+            if (major < 11 || (major === 11 && minor < 5)) {
+              console.error('Trusted publishing requires npm >= 11.5.1');
+              process.exit(1);
+            }
+          "
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Create npm dirs
+        run: pnpm exec napi create-npm-dirs
+
+      - name: Move artifacts
+        run: pnpm artifacts
+
+      - name: Restore generated loader
+        run: |
+          set -euo pipefail
+          restored=0
+          for dir in artifacts/bindings-*/; do
+            if [ -f "${dir}index.mjs" ] && [ -f "${dir}index.d.ts" ]; then
+              cp "${dir}index.mjs" "${dir}index.d.ts" .
+              echo "Restored index.mjs and index.d.ts from ${dir}"
+              restored=1
+              break
+            fi
+          done
+          if [ "$restored" -ne 1 ]; then
+            echo "::error::Missing generated index.mjs/index.d.ts in build artifacts"
+            exit 1
+          fi
+
+      - name: Verify platform packages
+        run: |
+          set -euo pipefail
+          expected=(
+            darwin-x64
+            darwin-arm64
+            linux-x64-gnu
+            linux-arm64-gnu
+            win32-x64-msvc
+            win32-arm64-msvc
+          )
+          missing=0
+          for platform in "${expected[@]}"; do
+            dir="npm/${platform}"
+            nodes=( "${dir}"/*.node )
+            if [ ! -d "${dir}" ]; then
+              echo "::error::Missing platform package directory ${dir}"
+              missing=1
+              continue
+            fi
+            if [ ! -e "${nodes[0]}" ]; then
+              echo "::error::Missing .node binary in ${dir}"
+              missing=1
+              continue
+            fi
+            echo "OK ${dir}: $(basename "${nodes[0]}")"
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::Refusing to publish with incomplete platform artifacts"
+            ls -laR npm artifacts || true
+            exit 1
+          fi
+
+      - name: List packages
+        run: ls -laR ./npm
+        shell: bash
+
+      # Publishes via npm trusted publishing (OIDC). No long-lived NPM_TOKEN.
+      # Configure a Trusted Publisher on npmjs.com for the root package and each
+      # platform package, pointing at workflow filename `release.yml`.
+      # Provenance attestations are generated automatically with trusted publishing.
+      - name: Publish
+        run: |
+          set -euo pipefail
+          if [ -n "${NODE_AUTH_TOKEN:-}" ] || [ -n "${NPM_TOKEN:-}" ]; then
+            echo "::error::Refusing to publish with a long-lived npm token in the environment. Use npm trusted publishing (OIDC) only."
+            exit 1
+          fi
+          npm publish --access public
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

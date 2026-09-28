@@ -27,4 +27,23 @@ Do not report security vulnerabilities in public issues. Use GitHub's private vu
 
 ## Releases
 
-GitHub Actions runs CI only. npm releases are performed manually by maintainers; pull requests must not add automated publishing or release creation.
+npm releases are published by `.github/workflows/release.yml` when a `v*` tag is pushed. Publishing uses [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/) (GitHub Actions OIDC) with automatic provenance. There is no long-lived `NPM_TOKEN`.
+
+Before the first release:
+
+1. Ensure the root package and each platform package exist on npmjs.com (create them under the `@troplabs` org, or bootstrap once with a short-lived granular token and revoke it afterward).
+2. On npmjs.com, configure a Trusted Publisher for `@troplabs/sftp-client-native` and each platform package (`-darwin-x64`, `-darwin-arm64`, `-linux-x64-gnu`, `-linux-arm64-gnu`, `-win32-x64-msvc`, `-win32-arm64-msvc`):
+   - Organization or user: `troplabs`
+   - Repository: `sftp-client-native`
+   - Workflow filename: `release.yml`
+   - Environment name (optional but recommended): `npm` (must match the workflow `environment`)
+3. Optionally require reviewers on the GitHub Environment named `npm`.
+4. After trusted publishing works, set each package's Publishing access to require 2FA and disallow tokens.
+
+Release steps:
+
+1. Align `version` in `package.json` and `Cargo.toml` / `Cargo.lock`.
+2. Push the release commit, then tag it (`git tag v0.1.0 && git push origin v0.1.0`).
+3. Confirm the Release workflow published the root package and all six platform packages with provenance.
+
+Do not add alternate publish paths or long-lived npm write tokens in pull requests without maintainer review.
