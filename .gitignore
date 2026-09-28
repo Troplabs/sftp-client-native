@@ -149,3 +149,6 @@ vite.config.ts.timestamp-*
 /index.mjs
 /index.d.ts
 *.node
+
+# Per-platform npm packages created by `napi create-npm-dirs` in CI
+/npm/

@@ -7,7 +7,8 @@ This repository builds the @troplabs/sftp-client-native Node.js package as a Rus
 - src/lib.rs owns the JavaScript-facing API and adapts it to russh and russh-sftp.
 - Cargo.toml and build.rs define the native addon.
 - package.json owns package metadata and NAPI-RS build scripts.
-- The GitHub Actions workflow is CI only. Never add npm publishing, release creation, or deployment steps unless the maintainers explicitly ask for them.
+- CI runs only on pull requests and pushes to `main`, with read-only repository permissions, and must not require npm credentials.
+- The Release workflow publishes to the public npm registry with npm trusted publishing (OIDC) and automatic provenance. Do not change its publish, provenance, or credential handling without an explicit maintainer request.
 
 Keep the first API small and asynchronous. Prefer adding capabilities to the existing client class over exposing russh implementation details to JavaScript.
 
@@ -29,13 +30,15 @@ cargo fmt --all -- --check
 cargo check
 ```
 
-The NAPI-RS build generates index.mjs, index.d.ts, and a platform-specific .node file. These are build outputs and are gitignored. pnpm pack runs the local build before creating a package archive.
+The NAPI-RS build generates index.mjs, index.d.ts, and a platform-specific .node file. These are build outputs and are gitignored. Run `pnpm run build` before a local `pnpm pack`.
 
-CI currently checks formatting and compiles the native addon. Add appropriate coverage as the project gains a test harness.
+npm distribution uses a thin root package plus one optional dependency package per target. Supported targets are macOS, Linux (glibc), and Windows for both amd64 and arm64.
+
+CI checks formatting and compiles every configured target. The Release workflow gathers those binaries, publishes the platform packages, then publishes the root package. Add appropriate coverage as the project gains a test harness.
 
 ## Changes
 
 - Update the README when the exported JavaScript API or platform requirements change.
 - Keep Cargo and npm metadata aligned at version changes.
 - CI must use read-only repository permissions and must not require npm credentials.
-- Do not add a publishing workflow. A maintainer will handle any npm release manually.
+- Releases publish from `.github/workflows/release.yml` on `v*` tags via npm trusted publishing (OIDC). Do not reintroduce long-lived `NPM_TOKEN` secrets.
