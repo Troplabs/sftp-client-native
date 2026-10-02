@@ -107,9 +107,12 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24.21.0
-          registry-url: https://registry.npmjs.org
           # npm trusted-publishing guidance: never cache the package manager in release builds.
           package-manager-cache: false
+          # Do NOT set registry-url: setup-node writes
+          # //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN} to .npmrc, and npm
+          # presents that empty placeholder instead of exchanging the OIDC token,
+          # producing E401 "authentication token seems to be invalid".
 
       - name: Ensure npm supports staged publishing
         run: |
@@ -198,9 +201,13 @@ jobs:
 
       # Stages via npm trusted publishing (OIDC). No long-lived NPM_TOKEN.
       # Configure a Trusted Publisher on npmjs.com for the root package and each
-      # platform package, pointing at workflow filename `release.yml`, with only
-      # the `npm stage publish` action allowed (the default for new
-      # configurations). Direct `npm publish` is intentionally not permitted.
+      # platform package (Package → Settings → Trusted publishing → GitHub
+      # Actions), with: org `troplabs`, repo `sftp-client-native`, workflow
+      # filename `release.yml`, environment name `npm` (this job uses
+      # `environment: npm`), and only the `npm stage publish` action allowed
+      # (the default for new configurations). npm does not validate the
+      # configuration on save — every field is case-sensitive and must match
+      # exactly. Direct `npm publish` is intentionally not permitted.
       # Nothing goes live here: a maintainer approves each staged version with
       # 2FA on npmjs.com (Staged Packages tab) or via `npm stage approve`.
       # OIDC trust tokens cannot run `npm stage list`/`approve`, so approval is

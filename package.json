@@ -1,11 +1,11 @@
 {
   "name": "@troplabs/sftp-client-native",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Asynchronous Node.js SFTP client backed by russh",
   "keywords": ["napi", "native-addon", "russh", "sftp", "ssh"],
   "homepage": "https://github.com/troplabs/sftp-client-native#readme",
   "bugs": { "url": "https://github.com/troplabs/sftp-client-native/issues" },
-  "repository": { "type": "git", "url": "https://github.com/troplabs/sftp-client-native.git" },
+  "repository": { "type": "git", "url": "git+https://github.com/troplabs/sftp-client-native.git" },
   "license": "Apache-2.0",
   "type": "module",
   "exports": { ".": { "types": "./index.d.ts", "import": "./index.mjs" } },
