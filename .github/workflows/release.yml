@@ -207,6 +207,12 @@ jobs:
             echo "::error::Refusing to publish with a long-lived npm token in the environment. Use npm trusted publishing (OIDC) only."
             exit 1
           fi
+          # Platform packages first so the root package's optionalDependencies
+          # are already live on the registry when it publishes.
+          for dir in npm/*/; do
+            echo "Publishing platform package ${dir}"
+            npm publish --access public "${dir}"
+          done
           npm publish --access public
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
