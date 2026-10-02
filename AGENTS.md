@@ -41,4 +41,4 @@ CI checks formatting and compiles every configured target. The Release workflow 
 - Update the README when the exported JavaScript API or platform requirements change.
 - Keep Cargo and npm metadata aligned at version changes.
 - CI must use read-only repository permissions and must not require npm credentials.
-- Releases publish from `.github/workflows/release.yml` on `v*` tags via npm trusted publishing (OIDC). Do not reintroduce long-lived `NPM_TOKEN` secrets.
+- Releases publish from `.github/workflows/release.yml` on `v*` tags via npm trusted publishing (OIDC) with staged publishing: the workflow runs `npm stage publish` and a maintainer approves each staged version with 2FA on npmjs.com or `npm stage approve`. Trusted publishers allow `npm stage publish` only; direct `npm publish` is rejected. Do not reintroduce long-lived `NPM_TOKEN` secrets.
