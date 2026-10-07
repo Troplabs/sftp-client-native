@@ -4,7 +4,7 @@ version = "0.1.2"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/troplabs/sftp-client-native"
-rust-version = "1.98"
+rust-version = "1.99"
 description = "Node.js native SFTP client backed by russh"
 
 [lib]

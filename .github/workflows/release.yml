@@ -1,13 +1,15 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: release-${{ github.repository }}
   cancel-in-progress: false
 
 # Default deny; publish job elevates only what OIDC + GitHub Releases need.
@@ -18,8 +20,54 @@ env:
   MACOSX_DEPLOYMENT_TARGET: "26.0"
 
 jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true &&
+        startsWith(github.event.pull_request.head.ref, 'chore/release-v') &&
+        github.event.pull_request.head.repo.full_name == github.repository)
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.versions.outputs.sha }}
+      tag: ${{ steps.versions.outputs.tag }}
+      version: ${{ steps.versions.outputs.version }}
+    steps:
+      - name: Resolve release ref
+        id: vars
+        env:
+          MERGE_COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            REF="$MERGE_COMMIT_SHA"
+          else
+            REF="$GITHUB_SHA"
+          fi
+          echo "target=$REF" >> "$GITHUB_OUTPUT"
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.vars.outputs.target }}
+          fetch-depth: 0
+
+      # Verifies every version field agrees with the event context, tags the
+      # commit, and creates the draft GitHub Release; writes sha/tag/version
+      # job outputs (scripts/release/finalize.sh keeps the details out of YAML).
+      - name: Verify, tag, and draft the release
+        id: versions
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/release/finalize.sh
+
   build:
     name: Build - ${{ matrix.settings.target }}
+    needs: prepare
     runs-on: ${{ matrix.settings.host }}
     strategy:
       fail-fast: false
@@ -45,8 +93,21 @@ jobs:
             build: pnpm build --target aarch64-pc-windows-msvc
 
     steps:
-      - name: Check out repository
+      - name: Check out release tag
         uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ needs.prepare.outputs.tag }}
+
+      - name: Verify release commit
+        env:
+          EXPECTED_SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$EXPECTED_SHA" ]; then
+            echo "::error::Checked out $actual but the release commit is $EXPECTED_SHA"
+            exit 1
+          fi
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -60,7 +121,6 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.98"
           targets: ${{ matrix.settings.target }}
 
       - name: Cache cargo
@@ -85,9 +145,36 @@ jobs:
             index.d.ts
           if-no-files-found: error
 
+  github-release:
+    name: Upload release assets
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: bindings-*
+          merge-multiple: true
+          path: dist
+
+      # Verifies the six platform binaries, writes SHA-256 checksums, and
+      # uploads both to the draft release (scripts/release/upload-assets.sh).
+      - name: Upload release assets
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: scripts/release/upload-assets.sh
+
   publish:
     name: Publish to npm
-    needs: build
+    needs:
+      - prepare
+      - build
     runs-on: ubuntu-latest
     # Optional GitHub Environment: add required reviewers / wait timer in repo settings.
     environment: npm
@@ -95,10 +182,22 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - name: Check out repository
+      - name: Check out release tag
         uses: actions/checkout@v7
         with:
+          ref: refs/tags/${{ needs.prepare.outputs.tag }}
           persist-credentials: false
+
+      - name: Verify release commit
+        env:
+          EXPECTED_SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$EXPECTED_SHA" ]; then
+            echo "::error::Checked out $actual but the release commit is $EXPECTED_SHA"
+            exit 1
+          fi
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6

@@ -21,7 +21,7 @@ Keep the first API small and asynchronous. Prefer adding capabilities to the exi
 
 ## Development
 
-Prerequisites: Rust 1.98 or newer, Node.js 24.21 or newer, and pnpm 12.
+Prerequisites: Rust 1.99 or newer (stable channel, per rust-toolchain.toml), Node.js 24.21 or newer, and pnpm 12.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -34,11 +34,11 @@ The NAPI-RS build generates index.mjs, index.d.ts, and a platform-specific .node
 
 npm distribution uses a thin root package plus one optional dependency package per target. Supported targets are macOS, Linux (glibc), and Windows for both amd64 and arm64.
 
-CI checks formatting and compiles every configured target. The Release workflow gathers those binaries, publishes the platform packages, then publishes the root package. Add appropriate coverage as the project gains a test harness.
+CI checks formatting and compiles every configured target. The Release workflow gathers those binaries into a draft GitHub Release, stages the platform packages, then stages the root package. Add appropriate coverage as the project gains a test harness.
 
 ## Changes
 
 - Update the README when the exported JavaScript API or platform requirements change.
 - Keep Cargo and npm metadata aligned at version changes.
 - CI must use read-only repository permissions and must not require npm credentials.
-- Releases publish from `.github/workflows/release.yml` on `v*` tags via npm trusted publishing (OIDC) with staged publishing: the workflow runs `npm stage publish` and a maintainer approves each staged version with 2FA on npmjs.com or `npm stage approve`. Trusted publishers allow `npm stage publish` only; direct `npm publish` is rejected. Do not reintroduce long-lived `NPM_TOKEN` secrets.
+- Releases publish from `.github/workflows/release.yml` when a `chore/release-v*` PR merges to `main` (opened by the "Prepare release" workflow) via npm trusted publishing (OIDC) with staged publishing: the workflow runs `npm stage publish` and a maintainer approves each staged version with 2FA on npmjs.com or `npm stage approve`. Trusted publishers allow `npm stage publish` only; direct `npm publish` is rejected. Do not reintroduce long-lived `NPM_TOKEN` secrets.

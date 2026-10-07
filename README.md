@@ -9,7 +9,7 @@ Use it when you need a small, promise-based SFTP API in Node.js without dependin
 ## Requirements
 
 - Node.js 24.21 or newer.
-- Rust 1.98 or newer and pnpm 12 to build from source.
+- Rust 1.99 or newer (stable channel) and pnpm 12 to build from source.
 - A reachable SSH server with the SFTP subsystem enabled.
 - The server's public host key recorded in `~/.ssh/known_hosts`, unless `hostKeyFingerprint` pins are supplied at connect time.
 
@@ -316,7 +316,7 @@ This only exercises password auth, `readDir` / `readFile`, and (on the writable 
 
 GitHub Actions CI runs on pull requests and pushes to `main`. It checks formatting and builds every supported platform target (macOS 26+, Linux glibc, and Windows × amd64/arm64) with read-only repository permissions.
 
-Pushing a `v*` tag runs the Release workflow, which rebuilds those targets and publishes via [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/) (OIDC). That publishes one optional package per platform, then the root `@troplabs/sftp-client-native` package, with automatic provenance and no long-lived npm token. See [CONTRIBUTING.md](CONTRIBUTING.md) for Trusted Publisher setup.
+Merging a `chore/release-v*` PR (opened by the "Prepare release" workflow) runs the Release workflow, which rebuilds those targets, attaches the binaries to a draft GitHub Release, and publishes via [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/) (OIDC). That publishes one optional package per platform, then the root `@troplabs/sftp-client-native` package, with automatic provenance and no long-lived npm token. See [CONTRIBUTING.md](CONTRIBUTING.md) for Trusted Publisher setup.
 
 ## License
 
