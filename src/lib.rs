@@ -1,16 +1,20 @@
 use std::fmt::Display;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
-use napi::bindgen_prelude::Buffer;
+use napi::bindgen_prelude::{Buffer, Either};
 use napi::{Error as NapiError, Result};
 use napi_derive::napi;
-use russh::client::{self, Handler};
+use russh::client;
 use russh::keys::agent::AgentIdentity;
 use russh::keys::agent::client::AgentClient;
-use russh::keys::{self, Certificate, PrivateKeyWithHashAlg, PublicKeyOrCertificate, decode_secret_key};
+use russh::keys::{self, Certificate, PrivateKeyWithHashAlg, decode_secret_key};
 use russh_sftp::client::SftpSession;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{RwLock, RwLockReadGuard};
+
+use crate::host_key::{HostKeyHandler, resolve_host_key_policy};
+
+mod host_key;
 
 fn to_napi_error(error: impl Display) -> NapiError {
     NapiError::from_reason(error.to_string())
@@ -44,22 +48,6 @@ fn load_certificate(cert_material: Option<&str>, cert_path: Option<&str>) -> Res
     }
 }
 
-struct KnownHostsHandler {
-    host: String,
-    port: u16,
-}
-
-impl Handler for KnownHostsHandler {
-    type Error = russh::Error;
-
-    async fn check_server_key(
-        &mut self,
-        server_public_key: &PublicKeyOrCertificate,
-    ) -> std::result::Result<bool, Self::Error> {
-        Ok(keys::check_known_hosts(&self.host, self.port, &server_public_key.public_key()).unwrap_or(false))
-    }
-}
-
 #[napi(object)]
 pub struct ConnectOptions {
     pub host: String,
@@ -73,6 +61,7 @@ pub struct ConnectOptions {
     pub certificate_path: Option<String>,
     pub agent: Option<bool>,
     pub agent_socket: Option<String>,
+    pub host_key_fingerprint: Option<Either<String, Vec<String>>>,
 }
 
 enum AuthMode {
@@ -153,11 +142,7 @@ fn resolve_auth_mode(options: &ConnectOptions) -> Result<AuthMode> {
     })
 }
 
-async fn authenticate_session(
-    ssh: &mut client::Handle<KnownHostsHandler>,
-    username: &str,
-    mode: AuthMode,
-) -> Result<()> {
+async fn authenticate_session(ssh: &mut client::Handle<HostKeyHandler>, username: &str, mode: AuthMode) -> Result<()> {
     match mode {
         AuthMode::Password(password) => {
             let auth = ssh.authenticate_password(username, password).await.map_err(to_napi_error)?;
@@ -201,7 +186,7 @@ async fn authenticate_session(
 }
 
 async fn authenticate_with_agent(
-    ssh: &mut client::Handle<KnownHostsHandler>,
+    ssh: &mut client::Handle<HostKeyHandler>,
     username: &str,
     socket: Option<&str>,
 ) -> Result<()> {
@@ -238,7 +223,7 @@ async fn authenticate_with_agent(
 }
 
 async fn try_agent_identities<S>(
-    ssh: &mut client::Handle<KnownHostsHandler>,
+    ssh: &mut client::Handle<HostKeyHandler>,
     username: &str,
     agent: &mut AgentClient<S>,
 ) -> Result<()>
@@ -275,8 +260,9 @@ where
 #[napi(js_name = "SftpClient")]
 pub struct JsSftpClient {
     sftp: SftpSession,
-    ssh: client::Handle<KnownHostsHandler>,
+    ssh: client::Handle<HostKeyHandler>,
     closed: RwLock<bool>,
+    host_key_fingerprint: String,
 }
 
 impl JsSftpClient {
@@ -294,12 +280,11 @@ impl JsSftpClient {
     #[napi(factory)]
     pub async fn connect(options: ConnectOptions) -> Result<Self> {
         let auth_mode = resolve_auth_mode(&options)?;
+        let host_key_policy = resolve_host_key_policy(&options)?;
         let port = options.port.unwrap_or(22);
         let config = Arc::new(client::Config::default());
-        let handler = KnownHostsHandler {
-            host: options.host.clone(),
-            port,
-        };
+        let presented = Arc::new(OnceLock::new());
+        let handler = HostKeyHandler::new(options.host.clone(), port, host_key_policy, presented.clone());
 
         let mut ssh = client::connect(config, (options.host.as_str(), port), handler).await.map_err(to_napi_error)?;
 
@@ -309,11 +294,22 @@ impl JsSftpClient {
         channel.request_subsystem(true, "sftp").await.map_err(to_napi_error)?;
         let sftp = SftpSession::new(channel.into_stream()).await.map_err(to_napi_error)?;
 
+        let host_key_fingerprint = presented
+            .get()
+            .cloned()
+            .ok_or_else(|| NapiError::from_reason("SSH session did not present a host key"))?;
+
         Ok(Self {
             sftp,
             ssh,
             closed: RwLock::new(false),
+            host_key_fingerprint,
         })
+    }
+
+    #[napi(getter)]
+    pub fn host_key_fingerprint(&self) -> String {
+        self.host_key_fingerprint.clone()
     }
 
     #[napi]

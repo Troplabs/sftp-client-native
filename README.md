@@ -2,7 +2,7 @@
 
 An asynchronous Node.js SFTP client backed by the Rust crates [russh](https://github.com/Eugeny/russh) and [russh-sftp](https://github.com/AspectUnk/russh-sftp), exposed through [NAPI-RS](https://napi.rs/).
 
-Use it when you need a small, promise-based SFTP API in Node.js without depending on OpenSSH CLI wrappers or pure-JS SSH stacks. The client verifies server host keys against the standard OpenSSH `~/.ssh/known_hosts` file and fails closed for unknown or changed keys.
+Use it when you need a small, promise-based SFTP API in Node.js without depending on OpenSSH CLI wrappers or pure-JS SSH stacks. The client verifies server host keys against the standard OpenSSH `~/.ssh/known_hosts` file — or against caller-supplied fingerprint pins — and fails closed for unknown, changed, or unmatched keys.
 
 > The package is under initial development. The JavaScript API may change before 1.0.
 
@@ -11,7 +11,7 @@ Use it when you need a small, promise-based SFTP API in Node.js without dependin
 - Node.js 24.21 or newer.
 - Rust 1.98 or newer and pnpm 12 to build from source.
 - A reachable SSH server with the SFTP subsystem enabled.
-- The server's public host key recorded in `~/.ssh/known_hosts`.
+- The server's public host key recorded in `~/.ssh/known_hosts`, unless `hostKeyFingerprint` pins are supplied at connect time.
 
 ## Install
 
@@ -79,6 +79,36 @@ Before `connect` returns a client, the TCP connection completes an SSH handshake
 - Add the server key through a trusted channel first (for example `ssh-keyscan` reviewed by an operator, or your infra provisioning flow).
 
 This is intentionally stricter than russh's upstream SFTP example, which accepts any server key.
+
+### Pinning a host key fingerprint
+
+Pass `hostKeyFingerprint` in `ConnectOptions` to verify the presented server key against one or more OpenSSH `SHA256:` / `SHA512:` fingerprints instead of `known_hosts`. A pin accepts a single string or an array; any matching entry passes.
+
+```js
+const client = await SftpClient.connect({
+  host: "sftp.example.com",
+  username: process.env.SFTP_USERNAME,
+  password: process.env.SFTP_PASSWORD,
+  hostKeyFingerprint: process.env.SFTP_HOST_KEY_FINGERPRINT, // e.g. "SHA256:..."
+  // or: hostKeyFingerprint: ["SHA256:...", "SHA512:..."],
+});
+```
+
+- A pin **replaces** the `known_hosts` check entirely — `~/.ssh/known_hosts` is not read, so this works in containers and CI without a populated file.
+- Servers can present different host key types (ed25519, RSA, ECDSA) depending on negotiation. Pin every key type the server may present, or connections may fail when a different type is negotiated.
+- `SHA256:` and `SHA512:` prefixes only; MD5 fingerprints are rejected before connecting.
+
+Get a server's fingerprints from a trusted channel:
+
+```sh
+# over the network — review against an out-of-band source before trusting
+ssh-keyscan -p 22 sftp.example.com | ssh-keygen -lf -
+
+# on the server itself, for each host key type
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+`hostKeyFingerprint` accepts the same `SHA256:`/`SHA512:` strings `ssh-keygen -lf` prints (trailing `=` padding is tolerated). After connecting, `client.hostKeyFingerprint` returns the `SHA256:` fingerprint of the key the server actually presented.
 
 ## Authentication
 
@@ -200,10 +230,12 @@ Connection, authentication, and SFTP failures reject the returned promises. Catc
 
 Typical failure cases:
 
-- Host key missing or mismatched in `known_hosts`
+- Host key missing or mismatched in `known_hosts`, or not matching `hostKeyFingerprint`
 - Auth rejected (wrong password, key, certificate, or agent identity)
 - Network / DNS failures
 - Remote path not found or permission denied
+
+Host-key rejection errors include the presented key's algorithm and `SHA256:` fingerprint so the actual server key can be identified.
 
 The library does not log credentials, private keys, or certificate material.
 
@@ -218,6 +250,7 @@ Connects, verifies the host key, authenticates, and opens the SFTP subsystem.
 - **host** `string` — SSH server host name or IP address.
 - **port** `number` (optional) — SSH port; defaults to `22`.
 - **username** `string` — SSH account name.
+- **hostKeyFingerprint** `string | string[]` (optional) — OpenSSH `SHA256:`/`SHA512:` fingerprint(s) of the expected server host key. When set, this pin replaces the `~/.ssh/known_hosts` check; the presented key must match at least one entry. See [Pinning a host key fingerprint](#pinning-a-host-key-fingerprint).
 
 #### Auth fields
 
@@ -229,6 +262,10 @@ Connects, verifies the host key, authenticates, and opens the SFTP subsystem.
 - **certificatePath** `string` (optional) — local path to an OpenSSH user certificate; requires a private key.
 - **agent** `boolean` (optional) — when `true`, authenticate via the default SSH agent.
 - **agentSocket** `string` (optional) — agent socket / named-pipe path; implies agent auth.
+
+### Instance properties
+
+- **hostKeyFingerprint** `string` (read-only) — `SHA256:` fingerprint of the server host key verified during `connect`. Remains available after `close()`.
 
 ### Instance methods
 

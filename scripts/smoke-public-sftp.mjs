@@ -45,6 +45,8 @@ async function exercise(server) {
   });
 
   try {
+    console.log(`hostKeyFingerprint: ${client.hostKeyFingerprint}`);
+
     const names = await client.readDir(server.probePath);
     console.log(`readDir(${server.probePath}): ${names.length} entries`);
     console.log(`  sample: ${names.slice(0, 8).join(", ") || "(empty)"}`);

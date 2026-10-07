@@ -14,7 +14,7 @@ Keep the first API small and asynchronous. Prefer adding capabilities to the exi
 
 ## Security requirements
 
-- Verify SSH server keys against the user's standard ~/.ssh/known_hosts file and fail closed for unknown, changed, or unreadable keys.
+- Verify SSH server keys against the user's standard ~/.ssh/known_hosts file, or against caller-supplied hostKeyFingerprint pins when provided, and fail closed for unknown, changed, unmatched, or unreadable keys.
 - Never accept every server key, silently add unknown keys, log credentials, or commit real credentials and private keys.
 - Keep errors as JavaScript rejections. Do not panic across the N-API boundary.
 - File paths are remote SFTP paths. Do not reinterpret them as local filesystem paths.
