@@ -1,6 +1,6 @@
 {
   "name": "@troplabs/sftp-client-native",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Asynchronous Node.js SFTP client backed by russh",
   "keywords": ["napi", "native-addon", "russh", "sftp", "ssh"],
   "homepage": "https://github.com/troplabs/sftp-client-native#readme",
@@ -25,12 +25,12 @@
   },
   "devDependencies": { "@napi-rs/cli": "^3.10.7", "dprint": "^0.60.1" },
   "optionalDependencies": {
-    "@troplabs/sftp-client-native-darwin-arm64": "0.2.0",
-    "@troplabs/sftp-client-native-darwin-x64": "0.2.0",
-    "@troplabs/sftp-client-native-linux-arm64-gnu": "0.2.0",
-    "@troplabs/sftp-client-native-linux-x64-gnu": "0.2.0",
-    "@troplabs/sftp-client-native-win32-arm64-msvc": "0.2.0",
-    "@troplabs/sftp-client-native-win32-x64-msvc": "0.2.0"
+    "@troplabs/sftp-client-native-darwin-arm64": "0.2.1",
+    "@troplabs/sftp-client-native-darwin-x64": "0.2.1",
+    "@troplabs/sftp-client-native-linux-arm64-gnu": "0.2.1",
+    "@troplabs/sftp-client-native-linux-x64-gnu": "0.2.1",
+    "@troplabs/sftp-client-native-win32-arm64-msvc": "0.2.1",
+    "@troplabs/sftp-client-native-win32-x64-msvc": "0.2.1"
   },
   "packageManager": "pnpm@12.9.1",
   "engines": { "node": ">=24.21" },
