@@ -95,8 +95,9 @@ cargo update --workspace
 # The bumped @troplabs/sftp-client-native-* versions do not exist on npm
 # yet, so pnpm drops them from the lockfile as unresolvable optional
 # dependencies. That is required: --frozen-lockfile in CI compares
-# package.json specifiers against the lockfile.
-pnpm install
+# package.json specifiers against the lockfile. CI=true makes plain
+# `pnpm install` run as --frozen-lockfile, so opt out explicitly.
+pnpm install --no-frozen-lockfile
 # Assert the lockfile is now consistent with the bumped specifiers.
 pnpm install --frozen-lockfile
 pnpm exec dprint fmt package.json Cargo.toml
