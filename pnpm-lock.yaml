@@ -172,25 +172,6 @@ importers:
       dprint:
         specifier: ^0.60.1
         version: 0.60.1
-    optionalDependencies:
-      '@troplabs/sftp-client-native-darwin-arm64':
-        specifier: 0.1.2
-        version: 0.1.2
-      '@troplabs/sftp-client-native-darwin-x64':
-        specifier: 0.1.2
-        version: 0.1.2
-      '@troplabs/sftp-client-native-linux-arm64-gnu':
-        specifier: 0.1.2
-        version: 0.1.2
-      '@troplabs/sftp-client-native-linux-x64-gnu':
-        specifier: 0.1.2
-        version: 0.1.2
-      '@troplabs/sftp-client-native-win32-arm64-msvc':
-        specifier: 0.1.2
-        version: 0.1.2
-      '@troplabs/sftp-client-native-win32-x64-msvc':
-        specifier: 0.1.2
-        version: 0.1.2
 
 packages:
 
@@ -848,44 +829,6 @@ packages:
   '@octokit/types@18.0.0':
     resolution: {integrity: sha512-l6bAF43PNxkJp6g+W4PjoUSSkxHomXw2nOum5CTftJz1NlV3vu93NImgOYtLf6CbBUb5j+fiuzW0PPQ5JTSvZA==}
 
-  '@troplabs/sftp-client-native-darwin-arm64@0.1.2':
-    resolution: {integrity: sha512-5BGkvBIg9WcZ2SPaJsbzkZHkH9yBMQIEVw4yVfkNpQUvI7OuHgFYGqq42VDA9GxzQSN3zGOSaj2yWl+0qTMEnQ==}
-    engines: {node: '>=24.21'}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@troplabs/sftp-client-native-darwin-x64@0.1.2':
-    resolution: {integrity: sha512-4e5Gyb6BSMHD5sV/nR8Yh/AubvdouCJ8PFmoPDSRZ+Phc8Ve3cly1EevFDfVlfnpN8fUC0xNi/9q/VbDUeAs7A==}
-    engines: {node: '>=24.21'}
-    cpu: [x64]
-    os: [darwin]
-
-  '@troplabs/sftp-client-native-linux-arm64-gnu@0.1.2':
-    resolution: {integrity: sha512-JvzWRix/6Sy4k5EVle2jF/VDNcfZdNvn8wh5ItRh/Kjk94Mo6FtLpJGNWKW9/wzkjGwxysmgbdLj/pfLxNHz+A==}
-    engines: {node: '>=24.21'}
-    cpu: [arm64]
-    os: [linux]
-    libc: [glibc]
-
-  '@troplabs/sftp-client-native-linux-x64-gnu@0.1.2':
-    resolution: {integrity: sha512-q+Ef4WBRW+Eb/rWlrZWvJaK4zsr7MbpuLs+DrgF9ELYVbsVhuk5zy0OH1EXFjTblWJ8B5o+V7P7tMH+QYcKLAA==}
-    engines: {node: '>=24.21'}
-    cpu: [x64]
-    os: [linux]
-    libc: [glibc]
-
-  '@troplabs/sftp-client-native-win32-arm64-msvc@0.1.2':
-    resolution: {integrity: sha512-vptruo0a9h+QIfb3zf3NdRWy7ZTXPWBIcT92FmzFv5TaSJjlFmJsfyroPW9JXSPOvyCwqz3aY7U7UekpRv+Vag==}
-    engines: {node: '>=24.21'}
-    cpu: [arm64]
-    os: [win32]
-
-  '@troplabs/sftp-client-native-win32-x64-msvc@0.1.2':
-    resolution: {integrity: sha512-4pB+bgf2RSadpqTNU3RBLcXj1kwhwo0aAlTPnQJbC0bDhUHPkUcDMOET9gk3xh1sCGKY0BDvmxNEE4KBp1z0Dg==}
-    engines: {node: '>=24.21'}
-    cpu: [x64]
-    os: [win32]
-
   '@tybys/wasm-util@0.10.4':
     resolution: {integrity: sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A==}
 
@@ -1483,24 +1426,6 @@ snapshots:
   '@octokit/types@18.0.0':
     dependencies:
       '@octokit/openapi-types': 29.0.1
-
-  '@troplabs/sftp-client-native-darwin-arm64@0.1.2':
-    optional: true
-
-  '@troplabs/sftp-client-native-darwin-x64@0.1.2':
-    optional: true
-
-  '@troplabs/sftp-client-native-linux-arm64-gnu@0.1.2':
-    optional: true
-
-  '@troplabs/sftp-client-native-linux-x64-gnu@0.1.2':
-    optional: true
-
-  '@troplabs/sftp-client-native-win32-arm64-msvc@0.1.2':
-    optional: true
-
-  '@troplabs/sftp-client-native-win32-x64-msvc@0.1.2':
-    optional: true
 
   '@tybys/wasm-util@0.10.4':
     dependencies:
