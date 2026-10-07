@@ -108,6 +108,7 @@ jobs:
             echo "::error::Checked out $actual but the release commit is $EXPECTED_SHA"
             exit 1
           fi
+        shell: bash
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
