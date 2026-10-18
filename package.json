@@ -23,7 +23,7 @@
     "smoke:public-sftp": "node scripts/smoke-public-sftp.mjs",
     "version": "napi version"
   },
-  "devDependencies": { "@napi-rs/cli": "^3.10.7", "dprint": "^0.61.1" },
+  "devDependencies": { "@napi-rs/cli": "^3.10.7", "dprint": "^0.63.0" },
   "optionalDependencies": {
     "@troplabs/sftp-client-native-darwin-arm64": "0.2.1",
     "@troplabs/sftp-client-native-darwin-x64": "0.2.1",
